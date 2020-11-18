@@ -7,9 +7,10 @@ from mpl_toolkits.mplot3d import Axes3D
 
 class cluster:
 
-	def __init__(self, seed_point):
+	def __init__(self, seed_point, lmbda):
 
 		self.data_points = np.array(seed_point)
+		self.lmbda = lmbda
 		self.center = seed_point
 		self.weight = self.f(0)
 		self.radius = 0
@@ -17,9 +18,7 @@ class cluster:
 
 	def f(self,t):
 
-		lmbda = 1
-
-		return np.power(2, -lmbda*t)
+		return np.power(2, -self.lmbda*t)
 
 	def calculate_center(self):
 
@@ -53,10 +52,9 @@ class cluster:
 
 		return self.weight
 
-	def get_xi(self, t_curr, T_p, lmbda):
+	def get_xi(self, t_curr, T_p):
 
-		return (2**(-lmbda*(t_curr - self.t_o + T_p)) - 1) / ( 2**(-lmbda*T_p) - 1)
-
+		return (2**(-self.lmbda*(t_curr - self.t_o + T_p)) - 1) / ( 2**(-self.lmbda*T_p) - 1)
 
 
 	def add_point(self, new_point):
@@ -103,9 +101,9 @@ class den_stream:
 
 		for k in range(len(C_o)):
 
-			xi = C_o[k].get_xi(self.time_elapsed, self.T_p, self.lmbda)
+			xi = C_o[k].get_xi(self.time_elapsed, self.T_p)
 
-			if C_o.get_weight() < xi:
+			if C_o[k].get_weight() < xi:
 
 				C_o.remove(C_o[k])
 
@@ -113,7 +111,13 @@ class den_stream:
 
 		self.merging(np.append(p, self.time_elapsed))
 
-		self.time_elapsed += 1
+		# cluster maintenance
+		if self.time_elapsed % self.T_p == 0:
+
+			self.prune_p_clusters()
+			self.prune_o_clusters()
+
+		self.time_elapsed += 0.001
 
 	def euclidean(self, p1, p2):
 
@@ -145,7 +149,6 @@ class den_stream:
 		""" function takes inputs new point, updates clusters """
 
 		# try merge p into nearest micro cluster
-
 		C_p = self.C_p
 		C_o = self.C_o
 
@@ -187,7 +190,7 @@ class den_stream:
 				return 
 
 		# no merge possible, create new outlier cluster	
-		C_o.append(cluster(p))
+		C_o.append(cluster(p, self.lmbda))
 
 
 	def directly_density_reachable(self, c1, c2, eps):
@@ -266,12 +269,12 @@ def euclidean(p1, p2):
 path = 'data/00.pkl'
 data = load_pkl(path)
 
-eps = 1
-beta = 2
-mu = 1
-lmbda = 1
+eps = 1.7
+beta = 0.5
+mu = 4
+lmbda = 0.25
 
-points_to_use = 20000
+points_to_use = 30000
 
 threshold_range = 60
 
