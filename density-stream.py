@@ -16,6 +16,16 @@ class cluster:
 		self.radius = 0
 		self.t_o = seed_point[3]
 
+	def euclidean(self, p1, p2):
+
+		d = 0
+
+		for i in range(len(p1)):
+
+			d += (p1[i] - p2[i])**2
+
+		return np.sqrt(d)
+
 	def f(self,t):
 
 		return np.power(2, -self.lmbda*t)
@@ -36,7 +46,7 @@ class cluster:
 
 		for i in range(len(self.data_points)):
 
-			distances.append(euclidean(self.data_points[i,:2], self.center))
+			distances.append(self.euclidean(self.data_points[i,:2], self.center))
 
 		self.radius = np.sum(np.multiply(self.f(np.subtract(self.data_points[:,3], t_curr)), distances)) / self.weight
 
@@ -252,54 +262,31 @@ class den_stream:
 		return final_clusters
 
 
-	
-
-def euclidean(p1, p2):
-
-	d = 0
-
-	for i in range(len(p1)):
-
-		d += (p1[i] - p2[i])**2
-
-	return np.sqrt(d)
-
-
 # main
 path = 'data/00.pkl'
 data = load_pkl(path)
 
+# den-stream parameters 
 eps = 1.7
 beta = 0.5
 mu = 4
 lmbda = 0.25
 
-points_to_use = 30000
+stream = den_stream(eps, beta, mu, lmbda) # instantiate stream object
 
-threshold_range = 60
-
-stream = den_stream(eps, beta, mu, lmbda)
-
-# loop over data
+# cluster all data points
 for i in range(len(data)):
 
-	# only use points within given range and ground plane extraction
-	if euclidean(data[i], [0,0,0]) < threshold_range and data[i,2] > 0.2:
+	stream.update(data[i])
 
-		stream.update(data[i])
+result = stream.get_cluster_result()
 
-	if i == points_to_use:
-
-		result = stream.get_cluster_result()
-
-		break
-
+# plot cluster result		
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.dist = 5
 
 
-# plot clusters
 for i in range(len(result)):
 
 	cluster_list = result[i]
@@ -314,9 +301,5 @@ for i in range(len(result)):
 
 	
 	ax.scatter(cluster_points[:,0], cluster_points[:,1], cluster_points[:,2], s=1)
-
-
-
-
 
 plt.show()
