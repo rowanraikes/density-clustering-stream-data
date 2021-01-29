@@ -207,7 +207,7 @@ class den_stream:
 
 		""" given two clusters; c1, c2; return True if they are directly density reachable.  """
 
-		if euclidean(c1.get_center(), c2.get_center()) < 2*eps:
+		if self.euclidean(c1.get_center(), c2.get_center()) < 2*eps:
 
 			return True
 		else:
@@ -241,6 +241,7 @@ class den_stream:
 
 		""" return the current clustering result """
 
+
 		# get all core clusters
 		final_clusters = []
 		C_p = self.C_p
@@ -258,13 +259,51 @@ class den_stream:
 
 			C_p.remove(seed_cluster)
 
-
 		return final_clusters
 
+	def plot_lidar_frame(self, data):
+
+		# instantiate figure		
+		fig = plt.figure()
+		ax = fig.add_subplot(111, projection='3d')
+		ax.dist = 5
+
+		ax.scatter(data[:,0], data[:,1], data[:,2], s=1)
+
+		plt.show()
+
+	def plot_cluster_result(self):
+
+		# instantiate figure		
+		fig = plt.figure()
+		ax = fig.add_subplot(111, projection='3d')
+		ax.dist = 5
+
+		result = self.get_cluster_result()
+
+		for i in range(len(result)):
+
+			cluster_list = result[i]
+
+			cluster_points = cluster_list[0].get_points()
+
+			if len(cluster_list) > 1:		
+
+				for j in range(1,len(cluster_list)):
+
+					cluster_points = np.vstack((cluster_points, cluster_list[j].get_points()))
+
+					ax.scatter(cluster_points[:,0], cluster_points[:,1], cluster_points[:,2], s=1)
+		plt.show()
 
 # main
-path = 'data/00.pkl'
-data = load_pkl(path)
+index = 0 # frame to load
+radius = 25 # how much of frame to return
+pos = [0,0,0] # location of vehicle
+
+for index in range(1):
+
+	data, pos = load_pkl(index, radius, pos)
 
 # den-stream parameters 
 eps = 1.7
@@ -274,32 +313,12 @@ lmbda = 0.25
 
 stream = den_stream(eps, beta, mu, lmbda) # instantiate stream object
 
-# cluster all data points
+# stream data points
 for i in range(len(data)):
 
 	stream.update(data[i])
 
-result = stream.get_cluster_result()
-
-# plot cluster result		
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.dist = 5
+stream.plot_cluster_result()
 
 
-for i in range(len(result)):
 
-	cluster_list = result[i]
-
-	cluster_points = cluster_list[0].get_points()
-
-	if len(cluster_list) > 1:		
-
-		for j in range(1,len(cluster_list)):
-
-			cluster_points = np.vstack((cluster_points, cluster_list[j].get_points()))
-
-	
-	ax.scatter(cluster_points[:,0], cluster_points[:,1], cluster_points[:,2], s=1)
-
-plt.show()

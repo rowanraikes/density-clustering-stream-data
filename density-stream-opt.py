@@ -3,6 +3,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from unpickle import load_pkl
 from sklearn.cluster import DBSCAN
+from collections import Counter
 
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -23,7 +24,7 @@ class cluster:
 
 	def calculate_radius(self):
 
-		self.radius = np.sum(np.linalg.norm(self.data_points - self.center)) / self.weight
+		self.radius = np.sum(np.linalg.norm(self.data_points - self.center, axis=1)) / self.weight
 
 	def get_center(self):
 
@@ -55,13 +56,12 @@ class cluster:
 
 class den_stream:
 
-	def __init__(self, eps, beta, mu):
+	def __init__(self, eps, beta):
 
 		self.C_p = []
 		self.C_o = []
 		self.beta = beta
 		self.eps = eps
-		self.mu = mu
 		self.time_elapsed = 0
 
 	def prune_p_clusters(self):
@@ -92,26 +92,17 @@ class den_stream:
 
 		# cluster maintenance
 
-
-	def euclidean(self, p1, p2):
-
-		d = 0
-
-		for i in range(len(p1)):
-
-			d += (p1[i] - p2[i])**2
-
-		return np.sqrt(d)
-
 	def sort_distances(self, p, C):
 
 		""" take input point and cluster array return list of indices in sorted order """
 
-		distances = []
+		#distances = []
 
-		for i in range(len(C)):
+		#for i in range(len(C)):
 
-			distances.append(self.euclidean(p, C[i].get_center()))
+		#	distances.append(self.euclidean(p, C[i].get_center()))
+
+		distances = np.linalg.norm(p - np.array([cluster.get_center() for cluster in C]), axis=1)
 
 		indices = np.argsort(distances)
 
@@ -133,7 +124,7 @@ class den_stream:
 			# if new radius c_p[i] < eps -> merge p into c_p[i]
 			
 			curr_cluster = C_p[indices[0]]
-			r_t = curr_cluster.get_radius() + self.euclidean(p, curr_cluster.get_center()) / curr_cluster.get_weight()
+			r_t = curr_cluster.get_radius() + np.linalg.norm(p - curr_cluster.get_center()) / curr_cluster.get_weight()
 
 			if r_t <= eps:
 
@@ -148,7 +139,7 @@ class den_stream:
 
 			curr_cluster = C_o[indices[0]]
 
-			r_t = curr_cluster.get_radius() + self.euclidean(p, curr_cluster.get_center()) / curr_cluster.get_weight()
+			r_t = curr_cluster.get_radius() + np.linalg.norm(p - curr_cluster.get_center()) / curr_cluster.get_weight()
 
 			if r_t <= eps:
 
@@ -182,32 +173,58 @@ class den_stream:
 
 		labels : 
 
+		bounding boxes : 
+
 		"""
 
 		# get core micro cluster centroids
 		core_centroids = [cluster.get_center() for cluster in self.C_p]
 
-		cluster_result = DBSCAN(self.eps, 1).fit(core_centroids)
-
+		# DBSCAN for final cluster result
+		cluster_result = DBSCAN(2*self.eps+0.1, 1).fit(core_centroids)  
 		cluster_labels = cluster_result.labels_
-
-		clustered_points = np.concatenate([cluster.get_points() for cluster in self.C_p])
+		cluster_indices = list(Counter(cluster_labels).keys())
 
 		labels = []
+		clustered_points = []
+		bounding_boxes = []
 
-		for i in range(len(cluster_labels)):
+		for index in cluster_indices:
 
-			labels.append(np.zeros(self.C_p[i].get_weight()) + cluster_labels[i])
+			constituent_indices = np.where(cluster_labels==index)[0] # indices of all micro-clusters
+
+			constituent_clusters = [self.C_p[i] for i in constituent_indices]
+
+			cluster_points = np.concatenate([cluster.get_points() for cluster in constituent_clusters])
+
+			labels.append(np.zeros(len(cluster_points)) + index) # append to labels array
+			clustered_points.append(cluster_points) # append to list of all points
+
+			# bounding box vertices
+			bounding_boxes.append([np.amin(cluster_points[:,0]), np.amax(cluster_points[:,0]), np.amin(cluster_points[:,1]), np.amax(cluster_points[:,1]), np.amin(cluster_points[:,2]), np.amax(cluster_points[:,2])])
+
 
 		labels = np.concatenate(labels)
+		clustered_points = np.concatenate(clustered_points)
 
-		print(labels)
 
-		print(clustered_points)
+		# clustered_points = np.concatenate([cluster.get_points() for cluster in self.C_p])
+
+		# labels = []
+
+		# for i in range(len(cluster_labels)):
+
+		# 	labels.append(np.zeros(self.C_p[i].get_weight()) + cluster_labels[i])
+
+		# labels = np.concatenate(labels)
+
+		# print(str(cluster_indices[-1] + 1) +' final clusters.' )
+
+		# print(clustered_points)
 
 		self.de_bugging()
 
-		return labels, clustered_points
+		return labels, clustered_points, bounding_boxes
 
 		
 
@@ -229,14 +246,53 @@ class den_stream:
 		ax = fig.add_subplot(111, projection='3d')
 		ax.dist = 5
 
-		labels, cluster_points = self.get_cluster_result()
+		labels, cluster_points, bounding_boxes = self.get_cluster_result()
 
+		# plot points
 		ax.scatter(cluster_points[:,0], cluster_points[:,1], cluster_points[:,2], s=1, c=labels)
+
+		# plot bounding boxes
+		for cluster_box in bounding_boxes:
+
+			X = np.array([cluster_box[0], cluster_box[1]])
+			Y = np.array([cluster_box[2], cluster_box[3]])
+			Z = np.array([cluster_box[4], cluster_box[5]])
+
+			# vertical lines
+			for i in range(2):
+				for j in range(2):
+					ax.plot(X[[i,i]], Y[[j,j]], Z, color='r', linewidth=0.5)
+
+			# horizontal lines
+			for i in range(2):
+				for j in range(2):
+					ax.plot(X[[i,i]], Y, Z[[j,j]], color='r',  linewidth=0.5)
+
+			# vertical lines
+			for i in range(2):
+				for j in range(2):
+					ax.plot(X, Y[[j,j]], Z[[i,i]], color='r',  linewidth=0.5)
+
 		plt.show()
 
+	def plot_micro_clusters(self):
+
+		# instantiate figure		
+		fig = plt.figure()
+		ax = fig.add_subplot(111, projection='3d')
+		ax.dist = 5
+
+		for cluster in self.C_p:
+
+			points = cluster.get_points()
+
+			ax.scatter(points[:,0], points[:,1], points[:,2], s=1)
+
+		plt.show()
+
+
 # main
-index = 0 # frame to load
-radius = 20 # how much of frame to return
+radius = 30 # how much of frame to return
 pos = [0,0,0] # location of vehicle
 
 for index in range(1):
@@ -244,20 +300,17 @@ for index in range(1):
 	data, pos = load_pkl(index, radius, pos)
 
 # den-stream parameters 
-eps = 0.1
-beta = 5
-mu = 4
+eps = 0.7
+beta = 10
 
-
-stream = den_stream(eps, beta, mu) # instantiate stream object
-
-stream.plot_lidar_frame(data)
+stream = den_stream(eps, beta) # instantiate stream object
 
 # stream data points
 for i in range(len(data)):
 
 	stream.update(data[i])
 
+#stream.plot_micro_clusters()
 stream.plot_cluster_result()
 
 
