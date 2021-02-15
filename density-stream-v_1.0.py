@@ -4,8 +4,15 @@ from matplotlib import pyplot as plt
 from unpickle import load_pkl
 from sklearn.cluster import DBSCAN
 from collections import Counter
+import time, pickle, json
 
 from mpl_toolkits.mplot3d import Axes3D
+
+""" density-stream v_1.0
+	--------------------
+	version adapts den-stream algorithm, optimising it for use with LiDAR data.
+
+"""
 
 class cluster:
 
@@ -63,6 +70,8 @@ class den_stream:
 		self.beta = beta
 		self.eps = eps
 		self.time_elapsed = 0
+		self.last_n = np.zeros((100,3)) # we need not store the z values
+		self.ego_pos = np.zeros(3) # store vehicle location
 
 	def prune_p_clusters(self):
 
@@ -90,17 +99,10 @@ class den_stream:
 
 		self.merging(p)
 
-		# cluster maintenance
 
 	def sort_distances(self, p, C):
 
 		""" take input point and cluster array return list of indices in sorted order """
-
-		#distances = []
-
-		#for i in range(len(C)):
-
-		#	distances.append(self.euclidean(p, C[i].get_center()))
 
 		distances = np.linalg.norm(p - np.array([cluster.get_center() for cluster in C]), axis=1)
 
@@ -118,15 +120,19 @@ class den_stream:
 		C_o = self.C_o
 
 		if len(C_p) != 0:
+
+			# find closest core-micro cluster
 			indices, distances = self.sort_distances(p, C_p)
 
 			# trial closest cluster with new point
 			# if new radius c_p[i] < eps -> merge p into c_p[i]
 			
 			curr_cluster = C_p[indices[0]]
-			r_t = curr_cluster.get_radius() + np.linalg.norm(p - curr_cluster.get_center()) / curr_cluster.get_weight()
 
-			if r_t <= eps:
+			#w = curr_cluster.get_weight()
+			#r_t = curr_cluster.get_radius()*(w/(w+1)) + (np.linalg.norm(p - curr_cluster.get_center()) / (w+1) )
+
+			if np.linalg.norm(p - curr_cluster.get_center()) <= self.eps:
 
 				curr_cluster.add_point(p)
 
@@ -139,9 +145,11 @@ class den_stream:
 
 			curr_cluster = C_o[indices[0]]
 
-			r_t = curr_cluster.get_radius() + np.linalg.norm(p - curr_cluster.get_center()) / curr_cluster.get_weight()
+			#w = curr_cluster.get_weight()
+			#r_t = curr_cluster.get_radius()*(w/(w+1)) + (np.linalg.norm(p - curr_cluster.get_center()) / (w+1) )
 
-			if r_t <= eps:
+
+			if np.linalg.norm(p - curr_cluster.get_center()) <= self.eps:
 
 				curr_cluster.add_point(p)
 
@@ -181,7 +189,7 @@ class den_stream:
 		core_centroids = [cluster.get_center() for cluster in self.C_p]
 
 		# DBSCAN for final cluster result
-		cluster_result = DBSCAN(2*self.eps+0.1, 2).fit(core_centroids)  
+		cluster_result = DBSCAN(3, 1).fit(core_centroids)  
 		cluster_labels = cluster_result.labels_
 		cluster_indices = list(Counter(cluster_labels).keys())
 
@@ -208,28 +216,39 @@ class den_stream:
 		clustered_points = np.concatenate(clustered_points)
 
 		self.de_bugging()
+		print(str(len(cluster_indices)) + ' final clusters.')
 
 		return labels, clustered_points, bounding_boxes
 
 		
 
-	def plot_lidar_frame(self, data):
+	def plot_lidar_frame(self, data, pos):
 
 		# instantiate figure		
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
-		ax.dist = 5
+		fig.set_size_inches(18.5, 10.5)
+		ax.dist = 3
+		ax.view_init(elev=60, azim=45)
+		ax.set_xlim3d(pos['x']-60, pos['x']+60)
+		ax.set_ylim3d(pos['y']-60, pos['y']+60)
+		ax.set_zlim3d(pos['z'], pos['z']+60)
 
+		# plot all data 
 		ax.scatter(data[:,0], data[:,1], data[:,2], s=1)
 
-		plt.show()
+		# plot object locations
+		#ax.scatter(object_locs[:,0], object_locs[:,1], object_locs[:,2], c='r',s=4)
+
 
 	def plot_cluster_result(self):
 
 		# instantiate figure		
 		fig = plt.figure()
 		ax = fig.add_subplot(111, projection='3d')
-		ax.dist = 5
+		fig.set_size_inches(18.5, 10.5)
+		ax.dist = 3
+		ax.view_init(elev=30, azim=45)
 
 		labels, cluster_points, bounding_boxes = self.get_cluster_result()
 
@@ -253,50 +272,37 @@ class den_stream:
 				for j in range(2):
 					ax.plot(X[[i,i]], Y, Z[[j,j]], color='r',  linewidth=0.5)
 
-			# vertical lines
+			# more horizontal lines
 			for i in range(2):
 				for j in range(2):
 					ax.plot(X, Y[[j,j]], Z[[i,i]], color='r',  linewidth=0.5)
 
-		plt.show()
-
-	def plot_micro_clusters(self):
-
-		# instantiate figure		
-		fig = plt.figure()
-		ax = fig.add_subplot(111, projection='3d')
-		ax.dist = 5
-
-		for cluster in self.C_p:
-
-			points = cluster.get_points()
-
-			ax.scatter(points[:,0], points[:,1], points[:,2], s=1)
-
-		plt.show()
-
-
+	
 # main
-radius = 20 # how much of frame to return
-pos = [0,0,0] # location of vehicle
-
-for index in range(1):
-
-	data, pos = load_pkl(index, radius, pos)
+radius = 0 # how much of frame to return
 
 # den-stream parameters 
-eps = 0.7
-beta = 10
+eps = 2
+beta = 20
+
+frame_no = 3
+
+data, ego_pos = load_pkl(frame_no, radius)
 
 stream = den_stream(eps, beta) # instantiate stream object
 
+stream.ego_pos = np.array([ego_pos['x'], ego_pos['y'], ego_pos['z']])
+
+start_time = time.time()
+
 # stream data points
-for i in range(len(data)):
+for i in range(n):
 
 	stream.update(data[i])
 
-#stream.plot_micro_clusters()
-stream.plot_cluster_result()
+stream.get_cluster_result()
 
+times.append(time.time() - start_time)
 
+print(str(i)+" points clustered in " +str(time.time() - start_time)+" seconds.") 
 
