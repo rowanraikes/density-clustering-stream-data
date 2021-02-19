@@ -1,7 +1,7 @@
 import pickle, json
 import numpy as np
 
-def load_pkl(index, radius, pos): 
+def load_pkl(index, radius, gpe=True): 
 
 	"""  Open pkl file of lidar data as numpy array containing xyz coordinates 
 	args
@@ -20,42 +20,39 @@ def load_pkl(index, radius, pos):
 
 	"""
 
-	# get gps data
-	with open('data/gps.json') as json_file:
-		gps = json.load(json_file)
+	# get gps data -- need to use poses instead, will be much better
+	with open('data/poses.json') as json_file:
+		poses = json.load(json_file)
 
-	# get time stamps
-	with open('data/timestamps.json') as json_file:
-		timestamps = json.load(json_file)
+	pos = poses[index]['position']
 
 	# construct path
 	if index < 10:
 		path = 'data/0'+str(index)+'.pkl'
+		cube_path = 'data/0'+str(index)+'_cuboids.pkl'
 	else:
-		path = 'data'+str(index)+'.pkl'
+		path = 'data/'+str(index)+'.pkl'
+		cube_path = 'data/'+str(index)+'_cuboids.pkl'
+
+	# get ground truth data
+	cube_file = open(cube_path, 'rb')
+	cuboid_data = pickle.load(cube_file)
+	object_locs = cuboid_data[['position.x', 'position.y', 'position.z']].to_numpy()
+
 
 	pkl_file = open(path, 'rb')
 
-	data = pickle.load(pkl_file)
-  
-	xyz_data = data.to_numpy()[:, 0:3]
+	data = pickle.load(pkl_file).to_numpy()
 
-	# slice data
-	if radius != 0:
-		xyz_data = slice_data(xyz_data, pos, radius)
+	spin_indices = np.where(data[:,5] == 0)
+  
+	xyz_data = data[spin_indices, 0:3]
+
 
 	# ground-plane extraction
-	xyz_data = extract_ground_plane(xyz_data, 0)
+	xyz_data = extract_ground_plane(xyz_data, pos['z'])
 
-	# update pos
-	delta_t = timestamps[index+1] - timestamps[index]
-
-	pos[0] = pos[0] + delta_t*gps[index]['xvel'] # x
-	pos[1] = pos[1] + delta_t*gps[index]['yvel'] # y
-
-	pos[2] = gps[index]['height'] # z
-
-	return xyz_data, pos
+	return xyz_data, pos, object_locs
 
 def slice_data(data, pos, radius):
 
